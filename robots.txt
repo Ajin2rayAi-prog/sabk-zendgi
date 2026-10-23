@@ -1,0 +1,11 @@
+User-Agent: *
+Allow: /
+Disallow: /admin
+Disallow: /api
+Disallow: /account
+Disallow: /login
+Disallow: /cart
+Disallow: /checkout
+
+Host: https://ajin2rayai-prog.github.io/sabk-zendgi
+Sitemap: https://ajin2rayai-prog.github.io/sabk-zendgi/sitemap.xml
