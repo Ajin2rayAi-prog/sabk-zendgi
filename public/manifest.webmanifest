@@ -1,0 +1,14 @@
+{
+  "name": "سبک زندگی | فروشگاه لباس خانوادگی",
+  "short_name": "سبک زندگی",
+  "description": "فروشگاه اینترنتی پوشاک زنانه، مردانه و بچگانه با ضمانت کیفیت و دوخت و تعویض سایز آسان",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6faf2",
+  "theme_color": "#5e8c4a",
+  "dir": "rtl",
+  "lang": "fa",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

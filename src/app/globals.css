@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------- فونت فارسی (Vazirmatn) با فالبک سیستمی ---------- */
+@font-face {
+  font-family: "Vazirmatn";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/fonts/webfonts/Vazirmatn[wght].woff2")
+    format("woff2");
+}
+
+:root {
+  --font-sans: "Vazirmatn";
+
+  /* رنگ‌های خنثی — تم روشن */
+  --c-bg: 246 250 242;
+  --c-elev: 255 255 255;
+  --c-fg: 17 24 22;
+  --c-muted: 94 108 104;
+  --c-border: 226 232 230;
+
+  /* رنگ‌های برند به‌صورت پیش‌فرض؛ در layout از config بازنویسی می‌شوند */
+  --c-primary: 18 122 92;
+  --c-primary-deep: 10 82 61;
+  --c-primary-soft: 214 240 231;
+  --c-primary-fg: 255 255 255;
+  --c-accent: 197 160 84;
+}
+
+/* html.dark تا از رنگ برندِ تزریق‌شده در layout (که :root است) پیشی بگیرد */
+html.dark {
+  --c-bg: 8 15 13;
+  --c-elev: 15 24 21;
+  --c-fg: 235 242 239;
+  --c-muted: 148 166 160;
+  --c-border: 30 42 38;
+  --c-primary-soft: 22 42 36;
+}
+
+* {
+  border-color: rgb(var(--c-border));
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: rgb(var(--c-bg));
+  color: rgb(var(--c-fg));
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--c-border));
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--c-primary));
+}
+::selection {
+  background: rgb(var(--c-primary) / 0.22);
+}
+
+@layer components {
+  .container-lux {
+    @apply mx-auto w-full max-w-[1360px] px-4 sm:px-6 lg:px-8;
+  }
+  .surface {
+    background-color: rgb(var(--c-elev));
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-brand-grad px-6 py-3 text-sm font-bold text-primary-fg shadow-brand transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lux active:translate-y-0;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border px-5 py-2.5 text-sm font-semibold transition-colors duration-300 hover:border-primary hover:text-primary;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-primary-soft px-6 py-3 text-sm font-bold text-primary-deep transition-all duration-300 hover:-translate-y-0.5 dark:text-primary;
+  }
+  .card {
+    @apply surface rounded-2xl border shadow-card transition-all duration-300;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium;
+  }
+  .skeleton {
+    @apply bg-gradient-to-l from-transparent via-black/5 to-transparent bg-[length:200%_100%] animate-shimmer dark:via-white/5;
+  }
+  .glass {
+    @apply border backdrop-blur-xl;
+    background-color: rgb(var(--c-elev) / 0.8);
+  }
+  /* قاب شیشه‌ای گرادیانی — تم «سبز پسته‌ای» برای همهٔ قاب‌های لباس/محصول */
+  .glass-frame {
+    background: linear-gradient(
+      135deg,
+      rgb(255 255 255 / 0.75) 0%,
+      rgb(228 240 218 / 0.55) 45%,
+      rgb(147 197 114 / 0.28) 100%
+    );
+    -webkit-backdrop-filter: blur(14px) saturate(1.3);
+    backdrop-filter: blur(14px) saturate(1.3);
+    border: 1px solid rgb(255 255 255 / 0.65);
+    box-shadow:
+      0 10px 30px rgb(94 140 74 / 0.14),
+      inset 0 1px 0 rgb(255 255 255 / 0.6);
+  }
+  html.dark .glass-frame {
+    background: linear-gradient(
+      135deg,
+      rgb(228 240 218 / 0.14) 0%,
+      rgb(147 197 114 / 0.12) 50%,
+      rgb(94 140 74 / 0.2) 100%
+    );
+    border-color: rgb(228 240 218 / 0.22);
+    box-shadow:
+      0 10px 30px rgb(0 0 0 / 0.35),
+      inset 0 1px 0 rgb(255 255 255 / 0.08);
+  }
+  /* محفظهٔ عکس داخل قاب شیشه‌ای: هالهٔ گرادیانی پسته‌ای ملایم دور عکس */
+  .glass-frame-img {
+    background: linear-gradient(150deg, rgb(228 240 218 / 0.9), rgb(147 197 114 / 0.35));
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.5);
+  }
+  .link-primary {
+    @apply font-semibold text-primary transition-opacity hover:opacity-80;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

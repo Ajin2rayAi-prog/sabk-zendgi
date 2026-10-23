@@ -1,0 +1,203 @@
+# .github/workflows/deploy.yml — حسنی
+#
+# استراتژی برای سرور کند ایران:
+#   ✓ npm install + next build روی رانر سریع GitHub (خارج ایران) انجام می‌شود
+#   ✓ postgres موقت برای prerender صفحات (دیتابیس واقعی نیست — فقط برای build)
+#   ✓ ایمیج نهایی فقط خروجیِ اجرا را دارد (خیلی سبک، pull سریع)
+#   ✓ سرور ایران فقط pull + migrate + restart می‌کند — هیچ build‌ای نمی‌کند
+#
+# Secrets لازم (ریپو → Settings → Secrets and variables → Actions):
+#   SSH_HOST     IP سرور
+#   SSH_USER     کاربر ادمین (عضو گروه docker)
+#   SSH_KEY      کلید خصوصی SSH
+#
+# (DB_PASSWORD در فایل .env سرور است — نیاز به secret نیست)
+name: deploy
+
+# فقط یک دیپلوی هم‌زمان: پوش‌های پشت سر هم، ران قبلی را کنسل می‌کنند
+# تا بیلد/دیپلوی‌های موازی روی هم نیفتند و سرور چند بار ری‌استارت نشود.
+concurrency:
+  group: hassani-yadak-deploy
+  cancel-in-progress: true
+
+# on:
+#   push:
+#     branches: [main]
+#   workflow_dispatch:
+#
+# روی هر push به main: build + push ایمیج + دیپلوی اتوماتیک روی سرور.
+# (نیاز به secrets: SSH_HOST, SSH_USER, SSH_KEY — در تنظیمات ریپو)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  # Docker/GHCR نام مخزن را کوچک می‌خواهد (حروف بزرگ مجاز نیست)
+  IMAGE: ghcr.io/ajin2rayai-prog/hassani-yadak
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    # postgres موقت فقط برای مرحلهٔ build (prerender صفحات)
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: build
+          POSTGRES_USER: build
+          POSTGRES_PASSWORD: build
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      # ۱) گرفتن کد
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ۲) نصب Node
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # ۳) نصب پکیج‌ها (روی رانر سریع — نه روی سرور ایران)
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      # ۴) کلاینت Prisma
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      # ۴٫۵) مهاجرت + seed روی postgres موقت (فقط برای prerender صفحات)
+      - name: Migrate & seed build database
+        run: |
+          npx prisma migrate deploy
+          npm run db:seed
+        env:
+          DATABASE_URL: postgresql://build:build@localhost:5432/build?schema=public
+
+      # ۵) build (با postgres موقت — برای prerender صفحات عمومی)
+      - name: Build Next.js
+        run: npm run build
+        env:
+          DATABASE_URL: postgresql://build:build@localhost:5432/build?schema=public
+          NEXT_PUBLIC_SITE_URL: https://hassani-yadak.ir
+
+      # ۶) ساخت ایمیج سبک + push به GHCR
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ۷) دیپلوی روی سرور — روی هر push به main اتوماتیک اجرا می‌شود.
+      # هوشمند: اگر ایمیج عوض نشده و migration جدیدی نیست، هیچ کاری نمی‌کند
+      # (نه restart، نه npm سنگین). بعد از restart هم سلامت چک می‌شود و
+      # در صورت خطا، خودکار به ایمیج قبلی برمی‌گردد.
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          # نصب npm روی سرور کند است؛ ۲۵ دقیقه مهلت برای مرحلهٔ migrate
+          command_timeout: 25m
+          script_stop: true
+          script: |
+            set -euo pipefail
+            PROJ=/opt/stack/projects/hassani-yadak
+            IMAGE=${{ env.IMAGE }}:latest
+            cd "$PROJ"
+            echo "==> pull ایمیج جدید"
+            docker compose pull app
+            NEW_ID="$(docker inspect "$IMAGE" --format '{{.Id}}')"
+            CUR_ID="$(docker inspect hassani-yadak --format '{{.Image}}' 2>/dev/null || echo none)"
+            echo "running=$CUR_ID"
+            echo "latest =$NEW_ID"
+
+            echo "==> همگام‌سازی فایل‌های migrate/seed از داخل ایمیج (خودترمیم‌شونده)"
+            mkdir -p migrations-src/src-data
+            CID="$(docker create "$IMAGE")"
+            docker cp "$CID:/app/scripts/migrate.sh" migrations-src/migrate.sh 2>/dev/null || echo "(migrate.sh در ایمیج نیست — نسخهٔ سرور می‌ماند)"
+            docker cp "$CID:/app/prisma/seed.ts" migrations-src/seed.ts 2>/dev/null || true
+            docker cp "$CID:/app/src/data/catalog.ts" migrations-src/src-data/catalog.ts 2>/dev/null || true
+            docker cp "$CID:/app/prisma/schema.prisma" migrations-src/schema.prisma 2>/dev/null || true
+            docker rm "$CID" >/dev/null
+
+            echo "==> بررسی migrationهای در انتظار (بدون npm — فقط مقایسهٔ نام‌ها)"
+            set -a; if [ -f .env ]; then . ./.env; fi; set +a
+            IMG_MIGS="$(docker run --rm "$IMAGE" sh -c 'ls /app/prisma/migrations 2>/dev/null' || true)"
+            APPLIED="$(docker compose exec -T -e PGPASSWORD="${DB_PASSWORD:-}" db psql -U hassani_yadak -d hassani_yadak -tAc 'select migration_name from _prisma_migrations' 2>/dev/null || true)"
+            PENDING=0
+            for m in $IMG_MIGS; do
+              if ! printf '%s\n' "$APPLIED" | grep -qx "$m"; then
+                echo "pending: $m"
+                PENDING=1
+              fi
+            done
+
+            if [ "$NEW_ID" = "$CUR_ID" ] && [ "$PENDING" = "0" ]; then
+              echo "بدون تغییر (ایمیج و دیتابیس به‌روزند) — خروج بدون restart ✅"
+              exit 0
+            fi
+
+            echo "==> نگه‌داشتن ایمیج فعلی برای rollback"
+            docker tag hassani-yadak:current hassani-yadak:previous 2>/dev/null || true
+            docker tag "$IMAGE" hassani-yadak:current
+
+            if [ "$PENDING" = "1" ]; then
+              echo "==> migrate دیتابیس (فقط چون migration جدید هست)"
+              bash migrations-src/migrate.sh || echo "(خطای migrate — ادامه با احتیاط)"
+            else
+              echo "==> migration جدیدی نیست — رد شدن از npm سنگین"
+            fi
+
+            echo "==> restart"
+            docker compose up -d
+
+            echo "==> انتظار سلامت اپ (حداکثر ۲ دقیقه)"
+            OK=0
+            for i in $(seq 1 12); do
+              if docker compose exec -T app wget -qO- http://127.0.0.1:3000/ >/dev/null 2>&1; then
+                OK=1
+                break
+              fi
+              sleep 10
+            done
+            if [ "$OK" = "0" ]; then
+              echo "!! اپ سالم نشد — rollback به ایمیج قبلی"
+              docker tag hassani-yadak:previous hassani-yadak:current
+              docker compose up -d
+              exit 1
+            fi
+            echo "==> پاک‌سازی ایمیج‌های بی‌استفاده"
+            docker image prune -f >/dev/null || true
+            echo "دیپلوی تمام ✅"
+            echo "rollback دستی: docker tag hassani-yadak:previous hassani-yadak:current && docker compose up -d"

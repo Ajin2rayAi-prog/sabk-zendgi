@@ -1,0 +1,286 @@
+// Prisma schema — SABK ZENDGI / سبک زندگی
+// دیتابیس: PostgreSQL — پورت از DATABASE_URL خوانده می‌شود
+// (لوکال: پورت ۵۴۳۳؛ در تولید با Docker compose: سرویس db در شبکهٔ داخلی)
+
+generator client {
+  provider      = "prisma-client-js"
+  // ایمیج اجرا node:22-alpine (musl) است ولی رانر CI اوبونتو است؛
+  // بدون linux-musl کلاینت در تولید کار نمی‌کند.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  title       String
+  icon        String    @default("Package") // نام آیکون lucide
+  description String?
+  order       Int       @default(0)
+  products    Product[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Product {
+  id           String   @id @default(cuid())
+  sku          String   @unique
+  slug         String   @unique
+  title        String
+  brand        String   @default("سبک زندگی")
+  description  String?
+  price        Int? // ریال؛ null = استعلام
+  priceBefore  Int?
+  image        String? // مسیر عکس واقعی مثل /products/amt-101.jpg
+  // ویدیوی معرفی محصول — لینک یوتیوب/آپارات یا mp4 مستقیم (آپلود نمی‌شود)
+  video        String? // https://youtu.be/... یا https://aparat.com/v/... یا /uploads/x.mp4
+  videoCover   String? // عکس کاور اختیاری؛ اگه نباشد thumbnail خود پلتفرم استفاده می‌شود
+  inStock      Boolean  @default(true)
+  visible      Boolean  @default(true) // نمایش در سایت؛ خاموش = مخفی از فروشگاه
+  featured     Boolean  @default(false)
+  tags         String[] @default([])
+  category     Category @relation(fields: [categorySlug], references: [slug], onDelete: Cascade, onUpdate: Cascade)
+  categorySlug String
+  reviews      Review[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([categorySlug])
+  @@index([featured])
+}
+
+// ============================================================
+//  بنرهای اسلایدی صفحهٔ اول — مدیریت از پنل (/admin/banners).
+//  image مسیر عکس آپلودشده (/uploads/...)، order ترتیب نمایش،
+//  active یعنی «الان روی سایت دیده شود».
+// ============================================================
+model BannerSlide {
+  id          String   @id @default(cuid())
+  title       String
+  subtitle    String?
+  image       String
+  imageMobile String?
+  link        String?
+  order     Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, order])
+}
+
+// ============================================================
+//  درخواست‌های همکاری — فرم استخدام + فرم شرکت‌های توزیعی.
+//  از صفحهٔ «همکاری با ما» ثبت می‌شوند، در پنل (/admin/forms)
+//  بررسی می‌شوند. fileUrl یعنی رزومهٔ آپلودشده (فقط فرم استخدام).
+// ============================================================
+enum FormType {
+  JOB // استخدام افراد
+  DISTRIBUTOR // همکاری شرکت‌های توزیعی
+}
+
+enum FormStatus {
+  NEW // خوانده‌نشده
+  READ // خوانده‌شده
+  ARCHIVED // بایگانی‌شده
+}
+
+model FormSubmission {
+  id        String     @id @default(cuid())
+  type      FormType
+  name      String
+  mobile    String
+  city      String?
+  position  String? // حوزه کاری درخواستی (فقط فرم استخدام)
+  message   String?
+  fileUrl   String?
+  status    FormStatus @default(NEW)
+  createdAt DateTime   @default(now())
+
+  @@index([type, status])
+}
+
+// ============================================================
+//  فاز ۳: احراز هویت مشتری (موبایل + کد یک‌بارمصرف) و سفارش‌ها
+// ============================================================
+
+/** وضعیت سفارش */
+enum OrderStatus {
+  PENDING // ثبت‌شده، در انتظار تأیید
+  CONFIRMED // تأییدشده
+  SHIPPED // ارسال‌شده
+  DELIVERED // تحویل‌شده
+  CANCELED // لغوشده
+}
+
+/** وضعیت پرداخت — فعلاً پیش‌فرض UNPAID؛ آمادهٔ اتصال درگاه در آینده */
+enum PaymentStatus {
+  UNPAID
+  PAID
+  REFUNDED
+}
+
+/** مشتری فروشگاه — بدون رمز؛ ورود فقط با موبایل + کد پیامکی */
+model Customer {
+  id        String   @id @default(cuid())
+  mobile    String   @unique // موبایل نرمال‌شده مثل 09xxxxxxxxx
+  name      String?
+  orders    Order[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/** کد یک‌بارمصرف ورود (OTP) */
+model OtpCode {
+  id        String   @id @default(cuid())
+  mobile    String
+  code      String
+  expiresAt DateTime
+  consumed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([mobile])
+}
+
+/** سفارش ثبت‌شده — پرداخت آنلاین در فاز بعد اضافه می‌شود */
+model Order {
+  id             String        @id @default(cuid())
+  code           String        @unique // شمارهٔ سفارش قابل‌نمایش مثل AMT-...
+  customer       Customer      @relation(fields: [customerId], references: [id])
+  customerId     String
+  customerName   String // اسنپ‌شات نام هنگام ثبت سفارش
+  customerMobile String
+  address        String?
+  note           String?
+  status         OrderStatus   @default(PENDING)
+  paymentStatus  PaymentStatus @default(UNPAID)
+  couponCode     String? // کد تخفیف اعمال‌شده (اسنپ‌شات)
+  discount       Int           @default(0) // مبلغ تخفیف به ریال
+  total          Int           @default(0) // ریال؛ جمع اقلام دارای قیمت (پس از تخفیف)
+  items          OrderItem[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([customerId])
+  @@index([status])
+}
+
+/** قلم سفارش — همهٔ فیلدها اسنپ‌شات لحظهٔ ثبت سفارش هستند */
+model OrderItem {
+  id         String  @id @default(cuid())
+  order      Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId    String
+  productSku String
+  slug       String
+  title      String
+  price      Int? // ریال؛ null = استعلام (معمولاً وارد سبد نمی‌شود)
+  image      String?
+  qty        Int     @default(1)
+
+  @@index([orderId])
+}
+
+// ============================================================
+//  فاز ۵: تنظیمات عمومی (کلید/مقدار) — از جمله پیکربندی هوش مصنوعی.
+//  ساختار کلید/مقدار تا White-Label بماند و هر تنظیم جدیدی بدون
+//  مهاجرت تازه اضافه شود.
+// ============================================================
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================================
+//  فاز ۶: نظرات و امتیاز محصولات (با تأیید مدیر)
+// ============================================================
+enum ReviewStatus {
+  PENDING // در انتظار تأیید
+  APPROVED // تأییدشده و نمایش‌داده‌شده
+  REJECTED // ردشده
+}
+
+model Review {
+  id          String       @id @default(cuid())
+  product     Product      @relation(fields: [productSlug], references: [slug], onDelete: Cascade, onUpdate: Cascade)
+  productSlug String
+  customerId  String? // اگر کاربر واردشده نظر دهد
+  authorName  String
+  rating      Int // ۱ تا ۵
+  comment     String
+  status      ReviewStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+
+  @@index([productSlug])
+  @@index([status])
+}
+
+// ============================================================
+//  فاز ۶: کد تخفیف / کوپن
+// ============================================================
+enum DiscountType {
+  PERCENT // درصدی
+  FIXED // مبلغ ثابت (ریال)
+}
+
+model Coupon {
+  id        String       @id @default(cuid())
+  code      String       @unique // نرمال‌شده به حروف بزرگ
+  type      DiscountType @default(PERCENT)
+  value     Int // درصد (۱..۱۰۰) یا مبلغ ثابت به ریال
+  active    Boolean      @default(true)
+  minTotal  Int? // حداقل مبلغ سبد برای اعمال
+  maxUses   Int? // حداکثر دفعات استفاده (null = نامحدود)
+  usedCount Int          @default(0)
+  expiresAt DateTime?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+// ============================================================
+//  فاز ۶: بلاگ / مقاله (برای سئو و محتوا)
+// ============================================================
+model Post {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  excerpt   String? // خلاصه برای کارت و متا
+  body      String // متن کامل (Markdown ساده)
+  cover     String? // مسیر عکس کاور
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([published])
+}
+
+// ============================================================
+//  فاز ۷: حساب‌های کاربری پنل مدیریت (مالک + مدیران)
+//  - OWNER: مالک سایت؛ مدیریت کامل + مدیریت خودِ حساب‌های ادمین
+//  - MANAGER: مدیر محتوا؛ همه‌چیز به‌جز مدیریت حساب‌های ادمین
+//  رمزها هرگز به‌صورت متن‌ذهن ذخیره نمی‌شوند (scrypt hash).
+// ============================================================
+
+enum AdminRole {
+  OWNER // مالک — دسترسی کامل + مدیریت ادمین‌ها
+  MANAGER // مدیر — محتوا/محصول/سفارش، بدون مدیریت ادمین‌ها
+}
+
+model AdminUser {
+  id            String    @id @default(cuid())
+  username      String    @unique // نام کاربری ورود (مثلاً owner)
+  name          String // نام نمایشی در پنل
+  passwordHash  String    // scrypt hash رمز عبور
+  role          AdminRole @default(MANAGER)
+  active        Boolean   @default(true) // غیرفعال‌سازی موقت دسترسی
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([role])
+}

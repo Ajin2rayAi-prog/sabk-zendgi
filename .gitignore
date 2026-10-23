@@ -1,0 +1,35 @@
+# deps
+/node_modules
+/.pnp
+.pnp.js
+
+# next
+/.next/
+/out/
+
+# production
+/build
+
+# env
+.env
+.env*.local
+
+# db
+*.db
+*.db-journal
+
+# misc
+.DS_Store
+*.pem
+npm-debug.log*
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+
+# uploads (bind mount روی سرور — فایل‌های آپلودشدهٔ واقعی، نه کد)
+uploads-data/
+
+# backups
+/backup/
+/backups/
+*_backup_*

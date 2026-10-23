@@ -1,0 +1,17 @@
+# مسیرهایی که در ایمیج نهایی لازم نیستند (build قبلاً روی رانر انجام شده)
+.git
+.gitignore
+backups
+.github
+*.md
+.env
+.env.local
+.env*.example
+docker-compose.yml
+scripts/setup-server.sh
+
+# کل node_modules لازم نیست — ایمیج فقط خروجیِ standalone را اجرا می‌کند.
+# migration دیتابیس از طریق یک کانتینر کمکی روی سرور انجام می‌شود
+# (scripts/migrate-server.sh) تا از شکار تک‌تک وابستگی‌های پرایسما
+# در ایمیج سبک runtime بی‌نیاز شویم.
+node_modules

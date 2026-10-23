@@ -1,0 +1,69 @@
+# docker-compose.yml — سبک زندگی
+# اپ + دیتابیس ایزوله. volume آپلود روی public/uploads سوار می‌شود
+# تا عکس‌های آپلودشدهٔ مدیر بین دیپلوی‌ها دوام بیاورند.
+services:
+  app:
+    # بیلد محلی (بدون GHCR) — ایمیج تگ‌خوردهٔ همین پروژه
+    build: .
+    image: hassani-yadak:latest
+    container_name: hassani-yadak
+    restart: always
+    env_file: ./.env
+    environment:
+      # Next.js standalone باید روی همهٔ اینترفیس‌ها گوش دهد تا Caddy
+      # (شبکهٔ web) بتواند به آن وصل شود؛ بدون HOSTNAME فقط روی
+      # hostname کانتینر bind می‌کند و Caddy 502 می‌گیرد.
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      # مسیر انبار گیرندهٔ ایجنت سئو روی volume (پایدار بین دیپلوی‌ها)
+      SEO_AGENT_STORE: /app/data/seo-agent.json
+    volumes:
+      # آپلودهای پنل ادمین — بایند به پوشهٔ هاست تا هم بین دیپلوی‌ها بمانند
+      # و هم Caddy مستقیم از دیسک سروشان کند (بدون نیاز به ری‌استارت اپ).
+      # مسیر هاست: همین پوشهٔ پروژه/uploads-data
+      - ./uploads-data:/app/public/uploads
+      # انبار گیرندهٔ ایجنت سئو — بدون volume با هر دیپلوی پاک می‌شد و
+      # متاها/اسکیماهای اعمال‌شده از روی سایت می‌پریدند
+      - agent_store:/app/data
+    networks: [web, internal]
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 700m
+    cpus: "1.0"
+    pids_limit: 256
+    healthcheck:
+      # 127.0.0.1 صریح — در alpine، localhost ممکن است به ::1 (IPv6) resolve
+      # شود در حالی که next-server فقط روی IPv4 گوش می‌دهد.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  db:
+    image: postgres:16-alpine
+    container_name: hassani-yadak-db
+    restart: always
+    environment:
+      POSTGRES_DB: hassani_yadak
+      POSTGRES_USER: hassani_yadak
+      POSTGRES_PASSWORD: "${DB_PASSWORD:-change-me-strong}"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    networks: [internal]
+    mem_limit: 400m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hassani_yadak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  web:
+    external: true
+  internal:
+
+volumes:
+  dbdata:
+  agent_store:
